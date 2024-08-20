@@ -67,11 +67,12 @@ func GetDataShardHashes(daConfig DAConfig, metadataUri string, n, threshold int6
 	fmt.Println("GetDataShardHashes-2", time.Now())
 
 	resBody, err := io.ReadAll(res.Body)
+	fmt.Println("GetDataShardHashes-2-1", err)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	fmt.Println("GetDataShardHashes-3", time.Now())
+	fmt.Println("GetDataShardHashes-3", time.Now(), string(resBody))
 	daShardHashes := DAShardHashesResponse{}
 	err = json.Unmarshal(resBody, &daShardHashes)
 	if err != nil {
