@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
@@ -25,7 +26,6 @@ import (
 	"github.com/sunriselayer/sunrise/x/da/keeper"
 	damodulekeeper "github.com/sunriselayer/sunrise/x/da/keeper"
 	"github.com/sunriselayer/sunrise/x/da/types"
-	"github.com/sunriselayer/sunrise/x/da/zkp"
 )
 
 const flagDAShardHashesAPI = "da.shard_hashes_api"
@@ -53,24 +53,29 @@ func ReadDAConfig(opts servertypes.AppOptions) (DAConfig, error) {
 
 func GetDataShardHashes(daConfig DAConfig, metadataUri string, n, threshold int64, valAddr sdk.ValAddress) ([]int64, [][]byte, error) {
 	indices := types.ShardIndicesForValidator(valAddr, n, threshold)
+	fmt.Println("GetDataShardHashes-1", n, threshold, len(indices), time.Now())
+
 	url := daConfig.ShardHashesAPI + "?metadata_uri=" + metadataUri + "&indices=" + strings.Trim(strings.Replace(fmt.Sprint(indices), " ", ",", -1), "[]")
 	res, err := http.Get(url)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer res.Body.Close()
+	fmt.Println("GetDataShardHashes-2", time.Now())
 
 	resBody, err := io.ReadAll(res.Body)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	fmt.Println("GetDataShardHashes-3", time.Now())
 	daShardHashes := DAShardHashesResponse{}
 	err = json.Unmarshal(resBody, &daShardHashes)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	fmt.Println("GetDataShardHashes-4", time.Now())
 	shares := [][]byte{}
 	for _, shareEncoded := range daShardHashes.ShardHashes {
 		share, err := base64.StdEncoding.DecodeString(shareEncoded)
@@ -79,6 +84,7 @@ func GetDataShardHashes(daConfig DAConfig, metadataUri string, n, threshold int6
 		}
 		shares = append(shares, share)
 	}
+	fmt.Println("GetDataShardHashes-5", time.Now())
 	return indices, shares, nil
 }
 
@@ -161,27 +167,32 @@ func (h *VoteExtHandler) ExtendVoteHandler(daConfig DAConfig, dec sdk.TxDecoder,
 			for _, msg := range msgs {
 				switch msg := msg.(type) {
 				case *types.MsgPublishData:
+					fmt.Println("ExtendVoteHandler-1", time.Now())
 					threshold := params.ReplicationFactor.QuoInt64(numValidators).MulInt64(int64(len(msg.ShardDoubleHashes))).RoundInt64()
 					if threshold > int64(len(msg.ShardDoubleHashes)) {
 						threshold = int64(len(msg.ShardDoubleHashes))
 					}
 
-					indices, shares, err := GetDataShardHashes(daConfig, msg.MetadataUri, int64(len(msg.ShardDoubleHashes)), threshold, valAddr)
-					if err != nil {
-						continue
-					}
+					_ = valAddr
+					// indices, shares, err := GetDataShardHashes(daConfig, msg.MetadataUri, int64(len(msg.ShardDoubleHashes)), threshold, valAddr)
+					// if err != nil {
+					// 	continue
+					// }
 
+					fmt.Println("ExtendVoteHandler-2", time.Now())
 					// filter zkp verified data
-					err = zkp.VerifyData(indices, shares, msg.ShardDoubleHashes, int(threshold))
-					if err != nil {
-						continue
-					}
+					// err = zkp.VerifyData(indices, shares, msg.ShardDoubleHashes, int(threshold))
+					// if err != nil {
+					// 	continue
+					// }
 
+					fmt.Println("ExtendVoteHandler-3", time.Now())
 					voteExt.Data = append(voteExt.Data, &types.PublishedData{
 						MetadataUri:       msg.MetadataUri,
 						ParityShardCount:  msg.ParityShardCount,
 						ShardDoubleHashes: msg.ShardDoubleHashes,
 					})
+					fmt.Println("ExtendVoteHandler-4")
 					// voteExt.Shares = append(voteExt.Shares, &types.DataShares{
 					// 	Indices: indices,
 					// 	Shares:  shares,
@@ -268,18 +279,24 @@ func (h *ProposalHandler) PrepareProposal() sdk.PrepareProposalHandler {
 
 		proposalTxs := defaultResponse.Txs
 
+		fmt.Println("PrepareProposal-1")
 		cp := ctx.ConsensusParams()
 		voteExtEnabled := cp.Abci != nil && req.Height > cp.Abci.VoteExtensionsEnableHeight && cp.Abci.VoteExtensionsEnableHeight != 0
 		if !voteExtEnabled {
 			return &abci.ResponsePrepareProposal{Txs: proposalTxs}, nil
 		}
 
+		fmt.Println("PrepareProposal-2")
 		err = baseapp.ValidateVoteExtensions(ctx, h.stakingKeeper, req.Height, ctx.ChainID(), req.LocalLastCommit)
 		if err != nil {
 			return nil, err
 		}
 
+		fmt.Println("PrepareProposal-3")
 		votedData, faultValidators, err := h.GetVotedDataAndFaultValidators(ctx, req.LocalLastCommit)
+		votedDataBz, _ := json.Marshal(votedData)
+		faultValidatorsBz, _ := json.Marshal(faultValidators)
+		fmt.Println("PrepareProposal-4", string(votedDataBz), string(faultValidatorsBz), err)
 		if err != nil {
 			return nil, errors.New("failed to get voted data and fault validators")
 		}
@@ -290,12 +307,14 @@ func (h *ProposalHandler) PrepareProposal() sdk.PrepareProposalHandler {
 			ExtendedCommitInfo: req.LocalLastCommit,
 		}
 
+		fmt.Println("PrepareProposal-5")
 		bz, err := json.Marshal(voteExtTx)
 		if err != nil {
 			h.logger.Error("failed to marshal vote extension tx", "err", err)
 			return nil, errors.New("failed to marshal vote extension tx")
 		}
 
+		fmt.Println("PrepareProposal-6")
 		proposalTxs = append(proposalTxs, bz)
 		return &abci.ResponsePrepareProposal{Txs: proposalTxs}, nil
 	}
@@ -305,38 +324,47 @@ func (h *ProposalHandler) ProcessProposal() sdk.ProcessProposalHandler {
 	return func(ctx sdk.Context, req *abci.RequestProcessProposal) (*abci.ResponseProcessProposal, error) {
 		txs := [][]byte{}
 		var voteExtTx VoteExtensionTx
+		fmt.Println("ProcessProposal-1")
 		for _, tx := range req.Txs {
 			if err := json.Unmarshal(tx, &voteExtTx); err == nil {
+				fmt.Println("ProcessProposal-2")
 				err := baseapp.ValidateVoteExtensions(ctx, h.stakingKeeper, req.Height, ctx.ChainID(), voteExtTx.ExtendedCommitInfo)
 				if err != nil {
 					return nil, err
 				}
 
+				fmt.Println("ProcessProposal-3")
 				votedData, faultValidators, err := h.GetVotedDataAndFaultValidators(ctx, voteExtTx.ExtendedCommitInfo)
 				if err != nil {
 					return nil, errors.New("failed to get voted data and fault validators")
 				}
 
+				fmt.Println("ProcessProposal-4")
 				if err := ConfirmVotedData(voteExtTx.VotedData, votedData); err != nil {
 					return &abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}, nil
 				}
 
+				fmt.Println("ProcessProposal-5")
 				if err := ConfirmFaultValidators(voteExtTx.FaultValidators, faultValidators); err != nil {
 					return &abci.ResponseProcessProposal{Status: abci.ResponseProcessProposal_REJECT}, nil
 				}
+				fmt.Println("ProcessProposal-6")
 			} else {
 				txs = append(txs, tx)
 			}
 		}
 
+		fmt.Println("ProcessProposal-7")
 		defaultReq := *req
 		defaultReq.Txs = txs
 		defaultHandler := h.DefaultProposalHandler.ProcessProposalHandler()
+		fmt.Println("ProcessProposal-8")
 		return defaultHandler(ctx, &defaultReq)
 	}
 }
 
 func (h *ProposalHandler) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeBlock) (*sdk.ResponsePreBlock, error) {
+	fmt.Println("PreBlocker-1")
 	ctx = ctx.WithEventManager(sdk.NewEventManager())
 	paramsChanged := false
 	for _, moduleName := range h.ModuleManager.OrderPreBlockers {
@@ -350,13 +378,16 @@ func (h *ProposalHandler) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeB
 			}
 		}
 	}
+	fmt.Println("PreBlocker-2")
 
 	for _, txBytes := range req.Txs {
+		fmt.Println("PreBlocker-3")
 		var voteExtTx VoteExtensionTx
 		if err := json.Unmarshal(txBytes, &voteExtTx); err != nil {
 			continue
 		}
 
+		fmt.Println("PreBlocker-4")
 		for _, data := range voteExtTx.VotedData {
 			published := h.keeper.GetPublishedData(ctx, data.MetadataUri)
 			published.MetadataUri = data.MetadataUri
@@ -368,16 +399,20 @@ func (h *ProposalHandler) PreBlocker(ctx sdk.Context, req *abci.RequestFinalizeB
 			}
 		}
 
+		fmt.Println("PreBlocker-5")
 		for _, valAddr := range voteExtTx.FaultValidators {
 			h.keeper.SetFaultCounter(ctx, valAddr, h.keeper.GetFaultCounter(ctx, valAddr)+1)
 		}
 
+		fmt.Println("PreBlocker-6")
 		params := h.keeper.GetParams(ctx)
 		if ctx.BlockHeight()%int64(params.SlashEpoch) == 0 {
 			h.keeper.HandleSlashEpoch(ctx)
 		}
+		fmt.Println("PreBlocker-7")
 	}
 
+	fmt.Println("PreBlocker-8")
 	return &sdk.ResponsePreBlock{ConsensusParamsChanged: paramsChanged}, nil
 }
 
