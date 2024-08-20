@@ -26,6 +26,7 @@ import (
 	"github.com/sunriselayer/sunrise/x/da/keeper"
 	damodulekeeper "github.com/sunriselayer/sunrise/x/da/keeper"
 	"github.com/sunriselayer/sunrise/x/da/types"
+	"github.com/sunriselayer/sunrise/x/da/zkp"
 )
 
 const flagDAShardHashesAPI = "da.shard_hashes_api"
@@ -173,18 +174,17 @@ func (h *VoteExtHandler) ExtendVoteHandler(daConfig DAConfig, dec sdk.TxDecoder,
 						threshold = int64(len(msg.ShardDoubleHashes))
 					}
 
-					_ = valAddr
-					// indices, shares, err := GetDataShardHashes(daConfig, msg.MetadataUri, int64(len(msg.ShardDoubleHashes)), threshold, valAddr)
-					// if err != nil {
-					// 	continue
-					// }
+					indices, shares, err := GetDataShardHashes(daConfig, msg.MetadataUri, int64(len(msg.ShardDoubleHashes)), threshold, valAddr)
+					if err != nil {
+						continue
+					}
 
 					fmt.Println("ExtendVoteHandler-2", time.Now())
 					// filter zkp verified data
-					// err = zkp.VerifyData(indices, shares, msg.ShardDoubleHashes, int(threshold))
-					// if err != nil {
-					// 	continue
-					// }
+					err = zkp.VerifyData(indices, shares, msg.ShardDoubleHashes, int(threshold))
+					if err != nil {
+						continue
+					}
 
 					fmt.Println("ExtendVoteHandler-3", time.Now())
 					voteExt.Data = append(voteExt.Data, &types.PublishedData{
