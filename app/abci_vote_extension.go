@@ -58,6 +58,7 @@ func GetDataShardHashes(daConfig DAConfig, metadataUri string, n, threshold int6
 
 	url := daConfig.ShardHashesAPI + "?metadata_uri=" + metadataUri + "&indices=" + strings.Trim(strings.Replace(fmt.Sprint(indices), " ", ",", -1), "[]")
 	res, err := http.Get(url)
+	fmt.Println("GetDataShardHashes-1-1", err)
 	if err != nil {
 		return nil, nil, err
 	}
